@@ -82,3 +82,21 @@ it('keeps a playable URL when an unused verification link is also present', asyn
     expect((await get_song_url('song', cookie, { quality: 'standard' })).url).toBe('https://stream.qq.com/song.mp3')
     expect(getTencentVerification(cookie)).toBeNull()
 })
+
+it('logs only safe response fields when explicitly probing verification', async () => {
+    const cookie = 'uin=probe;qqmusic_key=PRIVATE_COOKIE'
+    vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce({ json: async () => ({}) })
+        .mockResolvedValueOnce({ json: async () => ({ code: 0, req_0: { code: 104009, data: {
+            retcode: 104009, validUrl: 'https://example.com/verify?token=PRIVATE_TOKEN',
+            midurlinfo: [{ result: 104009, purl: '', vkey: 'PRIVATE_VKEY' }],
+        } } }) }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await get_song_url('probe-song', cookie, { quality: 'standard', verificationProbe: true })).toEqual({ url: '', verificationRequired: true })
+    expect(warn).toHaveBeenCalledWith('[tencent] verification response', JSON.stringify({
+        songmid: 'probe-song', prefix: 'M500', code: 0, requestCode: 104009, retcode: 104009, songResult: 104009,
+        hasPurl: false, hasValidUrl: true, verificationRequired: true, hasPendingVerification: false,
+    }))
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_')
+})

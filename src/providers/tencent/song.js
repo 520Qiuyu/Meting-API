@@ -117,7 +117,7 @@ const buildFallbackLevels = (requestedKey) => {
     return FALLBACK_CHAIN.slice(idx)
 }
 
-const fetchVkeyUrl = async (songmid, mediaMid, typeObj, uin, authst, cookie) => {
+const fetchVkeyUrl = async (songmid, mediaMid, typeObj, uin, authst, cookie, verificationProbe = false) => {
     const filename = [`${typeObj.s}${songmid}${mediaMid}${typeObj.e}`]
     const guid = (Math.random() * 10000000).toFixed(0)
 
@@ -182,6 +182,16 @@ const fetchVkeyUrl = async (songmid, mediaMid, typeObj, uin, authst, cookie) => 
             pendingVerifications.set(cookie, { songmid, validUrl: validUrl.href, createdAt: Date.now() })
         }
     } catch {}
+
+    if (verificationProbe) {
+        console.warn('[tencent] verification response', JSON.stringify({
+            songmid, prefix: typeObj.s,
+            code: Number(result?.code ?? -1), requestCode: Number(result?.req_0?.code ?? -1),
+            retcode: Number(result?.req_0?.data?.retcode ?? -1), songResult: Number(info?.result ?? -1),
+            hasPurl: Boolean(purl), hasValidUrl: Boolean(result?.req_0?.data?.validUrl),
+            verificationRequired, hasPendingVerification: Boolean(getTencentVerification(cookie)),
+        }))
+    }
 
     // 104003 无权限；空 purl；或 result 非 0 都视为失败
     if (verificationRequired || !purl || (info?.result !== undefined && info.result !== 0)) {
@@ -275,7 +285,7 @@ export const get_song_url = async (id, cookie = '', options = {}) => {
         }
 
         try {
-            const { url, verificationRequired } = await fetchVkeyUrl(songmid, mediaMid, typeObj, uin, authst, cookie)
+            const { url, verificationRequired } = await fetchVkeyUrl(songmid, mediaMid, typeObj, uin, authst, cookie, options.verificationProbe)
             if (verificationRequired) return { url: '', verificationRequired: true }
             if (!url) continue
 

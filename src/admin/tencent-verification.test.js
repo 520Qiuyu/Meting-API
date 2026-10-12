@@ -79,3 +79,29 @@ it.each([104009, 104003])('restores a three-failure prompt and opens the officia
     expect(response.status).toBe(200)
     expect(startTencentVerification).toHaveBeenCalledWith('old-account', cookie, 'https://c.y.qq.com/r/fy6U?tokenValid=FRESH')
 })
+
+it.each([104009, 104003])('distinguishes missing challenge URLs from permission failures with code %s', async (code) => {
+    const account = { id: 'probe-account', platform: 'tencent', cookie: 'uin=probe-' + code, urlErrorCount: 3, lastFailedSongmid: 'storedsong' }
+    vi.spyOn(store, 'getCookie').mockReturnValue(account)
+    vi.spyOn(store, 'validateToken').mockReturnValue(true)
+    vi.spyOn(store.users, 'get').mockReturnValue({ role: 'admin' })
+    vi.spyOn(store, 'recordCookieUrlFailure').mockResolvedValue()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    startTencentVerification.mockClear()
+    vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce({ json: async () => ({}) })
+        .mockResolvedValueOnce({ json: async () => ({ req_0: { code, data: { midurlinfo: [{ result: code, purl: '' }] } } }) }))
+    const app = new Hono()
+    adminRoutes(app)
+
+    const response = await app.request('/admin/cookies/probe-account/verification/start', {
+        method: 'POST', headers: { 'X-Auth-Username': 'admin', 'X-Auth-Token': 'test' },
+    })
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.error).toContain('storedsong')
+    expect(body.error).toContain(code === 104009 ? '要求验证' : '标准音质获取失败')
+    expect(startTencentVerification).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith('[tencent] verification start', JSON.stringify({ cookieId: 'probe-account', songmid: 'storedsong', quality: 'standard' }))
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(account.cookie)
+})

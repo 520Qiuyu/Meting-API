@@ -145,16 +145,21 @@ export const adminRoutes = (app) => {
             const body = await c.req.json().catch(() => ({}))
             const songmid = cookie.tencentVerificationSongmid || cookie.lastFailedSongmid || String(body.songmid || '').trim()
             if (!/^[A-Za-z0-9]{1,64}$/.test(songmid)) return c.json({ success: false, error: '请输入需要播放的 QQ 音乐歌曲 ID' }, 400)
+            console.warn('[tencent] verification start', JSON.stringify({ cookieId: id, songmid, quality: 'standard' }))
             try {
-                const data = await get_song_url(songmid, cookie.cookie, { quality: 'standard' })
+                const data = await get_song_url(songmid, cookie.cookie, { quality: 'standard', verificationProbe: true })
                 if (data?.url) {
                     await store.recordCookieUrlSuccess(id)
                     return c.json({ success: false, error: '播放链接已恢复，无需滑块验证' }, 400)
                 }
                 pending = getTencentVerification(cookie.cookie)
                 if (data?.verificationRequired) await store.recordCookieUrlFailure(id, songmid, true)
-            } catch {}
-            if (!pending) return c.json({ success: false, error: 'QQ 音乐未返回滑块验证，请检查歌曲权限或稍后重试' }, 400)
+                if (!pending) return c.json({ success: false, error: data?.verificationRequired
+                    ? `QQ 音乐要求验证，但未提供可用的官方验证地址（歌曲 ${songmid}）`
+                    : `歌曲 ${songmid} 的标准音质获取失败，QQ 音乐未提供滑块验证地址，请检查歌曲权限或刷新 Cookie` }, 400)
+            } catch {
+                return c.json({ success: false, error: 'QQ 音乐验证请求失败，请稍后重试' }, 502)
+            }
         }
         try {
             await startTencentVerification(id, cookie.cookie, pending.validUrl)
