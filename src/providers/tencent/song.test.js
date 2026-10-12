@@ -46,7 +46,7 @@ it('does not treat a vkey payload as playable when Tencent requires verification
     expect(getTencentVerification(cookie)?.songmid).toBe('0010BrWk2SucQr')
 })
 
-it('does not print the Tencent vkey response when no URL is returned', async () => {
+it('keeps an official verification link on a permission response without exposing the vkey payload', async () => {
     const response = {
         code: 0,
         req_0: { code: 0, data: { validUrl: 'https://c.y.qq.com/r/fy6U?tokenValid=PRIVATE_TOKEN', midurlinfo: [{ result: 104003, purl: '', vkey: 'SECRET', errmsg: 'no permission' }] } },
@@ -56,6 +56,29 @@ it('does not print the Tencent vkey response when no URL is returned', async () 
         .mockResolvedValueOnce({ json: async () => response }))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect(await get_song_url('003ujA7V2k3oPC', 'uin=123;qqmusic_key=COOKIE_SECRET', { quality: 'standard' })).toBeNull()
+    const cookie = 'uin=123;qqmusic_key=COOKIE_SECRET'
+    expect(await get_song_url('003ujA7V2k3oPC', cookie, { quality: 'standard' })).toEqual({ url: '', verificationRequired: true })
+    expect(getTencentVerification(cookie)).toEqual({ songmid: '003ujA7V2k3oPC', validUrl: response.req_0.data.validUrl })
     expect(warn).not.toHaveBeenCalled()
+})
+
+it.each([undefined, 'https://example.com/verify', 'http://c.y.qq.com/verify', 'https://c.y.qq.com.example.com/verify'])('does not turn a permission failure into verification without a trusted HTTPS link (%s)', async (validUrl) => {
+    const cookie = 'uin=permission-only'
+    vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce({ json: async () => ({}) })
+        .mockResolvedValueOnce({ json: async () => ({ req_0: { data: { validUrl, midurlinfo: [{ result: 104003, purl: '' }] } } }) }))
+
+    expect(await get_song_url('song', cookie, { quality: 'standard' })).toBeNull()
+    expect(getTencentVerification(cookie)).toBeNull()
+})
+
+it('keeps a playable URL when an unused verification link is also present', async () => {
+    const cookie = 'uin=playable'
+    vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce({ json: async () => ({}) })
+        .mockResolvedValueOnce({ json: async () => ({ req_0: { data: { validUrl: 'https://c.y.qq.com/verify', sip: ['https://stream.qq.com/'], midurlinfo: [{ result: 0, purl: 'song.mp3' }] } } }) })
+        .mockResolvedValueOnce({ status: 206 }))
+
+    expect((await get_song_url('song', cookie, { quality: 'standard' })).url).toBe('https://stream.qq.com/song.mp3')
+    expect(getTencentVerification(cookie)).toBeNull()
 })

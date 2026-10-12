@@ -171,16 +171,17 @@ const fetchVkeyUrl = async (songmid, mediaMid, typeObj, uin, authst, cookie) => 
     const info = result?.req_0?.data?.midurlinfo?.[0]
     const purl = info?.purl || ''
 
-    const verificationRequired = [result?.code, result?.req_0?.code, result?.req_0?.data?.retcode, info?.result]
+    let verificationRequired = [result?.code, result?.req_0?.code, result?.req_0?.data?.retcode, info?.result]
         .some(code => Number(code) === 104009)
-    if (verificationRequired) {
-        try {
-            const validUrl = new URL(String(result.req_0.data.validUrl).replace(/\\([:/_])/g, '$1'))
-            if (validUrl.protocol === 'https:' && validUrl.hostname === 'c.y.qq.com') {
-                pendingVerifications.set(cookie, { songmid, validUrl: validUrl.href, createdAt: Date.now() })
-            }
-        } catch {}
-    }
+    try {
+        const validUrl = new URL(String(result?.req_0?.data?.validUrl).replace(/\\([:/_])/g, '$1'))
+        // QQ 也可能在 104003 等播放失败响应中附带官方验证地址。
+        if (validUrl.protocol === 'https:' && validUrl.hostname === 'c.y.qq.com'
+            && (verificationRequired || !purl || (info?.result !== undefined && info.result !== 0))) {
+            verificationRequired = true
+            pendingVerifications.set(cookie, { songmid, validUrl: validUrl.href, createdAt: Date.now() })
+        }
+    } catch {}
 
     // 104003 无权限；空 purl；或 result 非 0 都视为失败
     if (verificationRequired || !purl || (info?.result !== undefined && info.result !== 0)) {

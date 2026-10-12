@@ -58,8 +58,8 @@ it('opens a Cookie-bound verification browser only for an authenticated admin', 
     expect((await (await app.request('/admin/cookies/tencent-verifications', { headers })).json()).data).toEqual([])
 })
 
-it('restores a three-failure prompt after the short-lived challenge expires and refreshes it on demand', async () => {
-    const cookie = 'uin=998;qqmusic_key=PRIVATE_COOKIE'
+it.each([104009, 104003])('restores a three-failure prompt and opens the official challenge returned with code %s', async (code) => {
+    const cookie = 'uin=998;qqmusic_key=PRIVATE_COOKIE_' + code
     const account = { id: 'old-account', platform: 'tencent', cookie, urlErrorCount: 3 }
     vi.spyOn(store, 'getCookies').mockReturnValue([account])
     vi.spyOn(store, 'getCookie').mockReturnValue(account)
@@ -72,7 +72,7 @@ it('restores a three-failure prompt after the short-lived challenge expires and 
 
     vi.stubGlobal('fetch', vi.fn()
         .mockResolvedValueOnce({ json: async () => ({ songinfo: { data: { track_info: { file: { media_mid: 'media', size_128mp3: 1 } } } } }) })
-        .mockResolvedValueOnce({ json: async () => ({ req_0: { code: 104009, data: { validUrl: 'https://c.y.qq.com/r/fy6U?tokenValid=FRESH', midurlinfo: [{ purl: '' }] } } }) }))
+        .mockResolvedValueOnce({ json: async () => ({ req_0: { code, data: { validUrl: 'https://c.y.qq.com/r/fy6U?tokenValid=FRESH', midurlinfo: [{ result: code, purl: '' }] } } }) }))
     const response = await app.request('/admin/cookies/old-account/verification/start', {
         method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ songmid: '0010BrWk2SucQr' }),
     })
