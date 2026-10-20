@@ -8,7 +8,10 @@ const song = id => ({ id, name: `歌曲 ${id}`, ar: [{ name: '测试歌手' }] }
 const program = id => ({ id, name: `节目 ${id}`, mainSong: song(id + 1000) })
 const provider = new Providers().get('netease')
 
-beforeEach(() => { vi.mocked(request).mockReset() })
+beforeEach(() => {
+    process.env.NETEASE_DJ_PAGE_DELAY_MS = '0'
+    vi.mocked(request).mockReset()
+})
 
 describe('网易云歌曲搜索分页', () => {
     it('returns songs after the first 30 results through the provider dispatcher', async () => {
@@ -71,6 +74,23 @@ describe('网易云电台节目加载', () => {
     it('stops on an empty page even if more is true', async () => {
         vi.mocked(request).mockResolvedValue({ code: 200, more: true, programs: [] })
         expect(await provider.handle('dj', 'radio-id')).toEqual([])
+    })
+
+    it('keeps the programs already fetched when a later page is rate limited', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        vi.mocked(request)
+            .mockResolvedValueOnce({ code: 200, more: true, programs: [program(1), program(2)] })
+            .mockResolvedValue({ code: 455 })
+        const programs = await provider.handle('dj', 'radio-id')
+        expect(programs.map(item => item.id)).toEqual(['1', '2'])
+        expect(request).toHaveBeenCalledTimes(4)
+        warn.mockRestore()
+    })
+
+    it('reports a friendly error when every retry of a rate limited first page fails', async () => {
+        vi.mocked(request).mockResolvedValue({ code: 400, message: '操作频繁，请稍候再试' })
+        await expect(provider.handle('dj', 'radio-id')).rejects.toThrow('请求过于频繁')
+        expect(request).toHaveBeenCalledTimes(3)
     })
 
     it('rejects a later upstream failure instead of returning a truncated list', async () => {

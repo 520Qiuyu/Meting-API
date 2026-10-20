@@ -178,10 +178,6 @@ GET /api?server=kugou&type=search_playlist&id=流行
 GET /api?server=kugou&type=playlist&id=gcid_3zfpq2kyzmz04f
 ```
 
-### 网易云电台与歌曲搜索分页
-
-电台 `type=dj` 不传分页参数时会逐页读取全部节目，不再只返回前 100 首；显式传入 `limit`、`page` 或 `offset` 时只返回指定页。
-
 歌曲搜索 `type=search`（包括以歌手名为关键词）默认仍返回第一页 30 首，兼容旧客户端；使用 `page` 或 `offset` 可继续读取后续结果，也可将 `limit` 提高至 100。
 
 ```http
