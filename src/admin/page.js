@@ -1038,7 +1038,6 @@ const getAdminHtml = () => `<!DOCTYPE html>
                                     <div><dt>累计滑块</dt><dd id="tencentVerifySliders"></dd></div>
                                     <div><dt>冷却状态</dt><dd id="tencentVerifyCooldown"></dd></div>
                                 </dl>
-                                <div class="form-group" id="tencentVerifySongGroup" style="display:none;max-width:360px;margin:8px 0 12px;"><label for="tencentVerifySongmid">歌曲 ID</label><input id="tencentVerifySongmid" type="text" placeholder="输入遇到播放失败的 QQ 音乐歌曲 ID"></div>
                                 <div class="actions">
                                     <button type="button" class="btn btn-primary btn-sm" id="tencentVerifyOpen" onclick="openTencentVerification()">打开滑块验证</button>
                                     <button type="button" class="btn btn-default btn-sm" id="tencentVerifyRetry" onclick="retryTencentVerification()">完成后重试</button>
@@ -1412,8 +1411,9 @@ const getAdminHtml = () => `<!DOCTYPE html>
                         <button type="button" class="qr-link-btn" onclick="closeQrVerifyFrame()">关闭验证窗口</button>
                     </div>
                     <!-- 汽水官方验证组件需要真实同源环境：opaque origin 下 bdms.js 读写 localStorage / document.cookie 会抛
-                         SecurityError，回调地址也会被拼成 "null/admin/…" 相对路径，二次验证因此永远无法开始。 -->
-                    <iframe id="qrVerifyIframe" title="汽水安全验证" sandbox="allow-scripts allow-same-origin"></iframe>
+                         SecurityError，回调地址也会被拼成 "null/admin/…" 相对路径，二次验证因此永远无法开始。
+                         抖音验证页还需要表单、弹窗等能力，故补齐对应 token。 -->
+                    <iframe id="qrVerifyIframe" title="汽水安全验证" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1776,7 +1776,6 @@ const getAdminHtml = () => `<!DOCTYPE html>
         let tencentPointerQueue = Promise.resolve();
         const selectTencentVerification = (id) => {
             const pending = tencentVerifications.find(account => account.id === id);
-            const changed = tencentVerificationId !== (pending?.id || '');
             tencentVerificationId = pending?.id || '';
             if (!pending) return;
             document.getElementById('tencentVerifyAccountSelect').value = pending.id;
@@ -1785,15 +1784,13 @@ const getAdminHtml = () => `<!DOCTYPE html>
             const identity = [pending.nickname, pending.accountId ? 'QQ / 微信账号 ' + pending.accountId : '', '记录 ' + pending.id].filter(Boolean).join(' · ');
             document.getElementById('tencentVerifyIdentity').textContent = identity;
             document.getElementById('tencentVerifyModalAccount').textContent = (pending.note || pending.nickname || '未备注账号') + ' · ' + identity;
-            document.getElementById('tencentVerifyMessage').textContent = pending.songmid ? '歌曲 ' + pending.songmid + (pending.confirmed ? ' 触发滑块验证。' : ' 获取失败，请先检查歌曲权限或尝试验证。') : '旧记录未保存歌曲 ID，请填写一首播放失败的歌曲。';
+            document.getElementById('tencentVerifyMessage').textContent = '歌曲 ' + pending.songmid + ' 触发滑块验证。';
             document.getElementById('tencentVerifyFailures').textContent = (pending.urlErrorCount || 0) + ' 次';
             document.getElementById('tencentVerifySliders').textContent = (pending.tencentSliderCount || 0) + ' 次';
             const remaining = Number(pending.tencentCooldownUntil || 0) - Date.now();
             const cooldown = document.getElementById('tencentVerifyCooldown');
             cooldown.textContent = remaining > 0 ? '剩余 ' + Math.ceil(remaining / 60000) + ' 分钟' : '未在冷却';
             cooldown.title = remaining > 0 ? '恢复时间：' + formatDate(pending.tencentCooldownUntil) : '';
-            document.getElementById('tencentVerifySongGroup').style.display = pending.songmid ? 'none' : 'block';
-            if (changed) document.getElementById('tencentVerifySongmid').value = '';
         };
         const loadTencentVerifications = async () => {
             if (tencentVerifyOpening || document.getElementById('tencentVerifyModal').classList.contains('show')) return;
@@ -1842,21 +1839,25 @@ const getAdminHtml = () => `<!DOCTYPE html>
             const button = document.getElementById('tencentVerifyOpen');
             button.disabled = true;
             document.getElementById('tencentVerifyAccountSelect').disabled = true;
+            // 启动失败（尤其是探测后确认 QQ 当前没有滑块要求）会改动待处理状态，
+            // 必须立即刷新顶部列表，而不是等 5 秒轮询才把该账号移除。
+            let refreshList = false;
             try {
                 document.getElementById('tencentVerifyStatus').textContent = '正在加载官方验证页面…';
-                const songmid = document.getElementById('tencentVerifySongmid').value.trim();
-                const res = await api('/admin/cookies/' + encodeURIComponent(tencentVerificationId) + '/verification/start', { method: 'POST', body: JSON.stringify({ songmid }) });
-                if (!res?.success) { showToast(res?.error || '验证窗口打开失败', 'error'); return; }
+                const res = await api('/admin/cookies/' + encodeURIComponent(tencentVerificationId) + '/verification/start', { method: 'POST' });
+                if (!res?.success) { refreshList = true; showToast(res?.error || '验证窗口打开失败', 'error'); return; }
                 document.getElementById('tencentVerifyModal').classList.add('show');
                 await refreshTencentVerificationFrame();
                 clearInterval(tencentVerifyTimer);
                 tencentVerifyTimer = setInterval(refreshTencentVerificationFrame, 650);
             } catch {
+                refreshList = true;
                 showToast('验证窗口打开失败，请稍后重试', 'error');
             } finally {
                 tencentVerifyOpening = false;
                 button.disabled = false;
                 document.getElementById('tencentVerifyAccountSelect').disabled = false;
+                if (refreshList) loadTencentVerifications();
             }
         };
 

@@ -100,6 +100,28 @@ describe('Meting 全局 Cookie 优先级', () => {
         }
     })
 
+    it('clears a stale Tencent slider marker once later requests no longer require verification', async () => {
+        const account = { id: 'tencent-stale-test', platform: 'tencent', cookie: 'uin=123;qqmusic_key=test', urlErrorCount: 5, tencentVerificationSongmid: '0010BrWk2SucQr', tencentSliderCount: 1, tencentCooldownUntil: 1 }
+        const save = vi.spyOn(store, 'saveToFile').mockResolvedValue()
+        store.cookies.set(account.id, account)
+        try {
+            await store.recordCookieUrlFailure(account.id, 'other-song', false)
+            expect(account).toMatchObject({ urlErrorCount: 6, lastFailedSongmid: 'other-song', tencentVerificationSongmid: '', tencentCooldownUntil: 0 })
+            expect(account.tencentSliderCount).toBe(1)
+            expect(save).toHaveBeenCalledTimes(1)
+
+            account.tencentVerificationSongmid = 'live-song'
+            account.tencentCooldownUntil = Date.now() + 60000
+            await store.clearTencentSliderState(account.id)
+            expect(account.tencentVerificationSongmid).toBe('')
+            expect(account.tencentCooldownUntil).toBe(0)
+            expect(save).toHaveBeenCalledTimes(2)
+        } finally {
+            store.cookies.delete(account.id)
+            save.mockRestore()
+        }
+    })
+
     it('temporarily skips slider accounts for normal, FM and quality selection', async () => {
         const account = { id: 'cooldown-test', platform: 'tencent', cookie: 'uin=123', isActive: true, isValid: true, updatedAt: 2, userInfo: { canPlaySvip: true } }
         const backup = { id: 'cooldown-backup', platform: 'tencent', cookie: 'uin=456', isActive: true, isValid: true, updatedAt: 1, userInfo: { canPlayVip: true } }

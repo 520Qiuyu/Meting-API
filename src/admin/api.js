@@ -15,8 +15,9 @@ import { wrapQishuiPlayPayload } from '../providers/qishui/audio.js'
 /**
  * 汽水二次验证 iframe 专用鉴权。
  *
- * `security_host.html` 以 `sandbox="allow-scripts"` 内嵌，属于 opaque origin，
- * 无法携带 `X-Auth-Token` 等自定义请求头，因此这几条路由不能只依赖 authMiddleware。
+ * `security_host.html` 以同源 iframe 内嵌（sandbox 必须带 `allow-same-origin`，否则官方
+ * SDK 读写 Cookie 会抛 SecurityError），但子页面发起请求时无法携带 `X-Auth-Token` 等
+ * 自定义请求头，因此这几条路由不能只依赖 authMiddleware。
  *
  * 这里采用能力凭证模型：二维码 token 由后台创建扫码会话时下发，仅在会话存活期间
  * 有效，且无法被外部猜测。已登录的管理员仍可通过常规请求头或 API Token 访问。
@@ -120,7 +121,10 @@ export const adminRoutes = (app) => {
         const data = store.getCookies('tencent').flatMap(account => {
             const { id, cookie, userInfo, tencentVerificationSongmid, lastFailedSongmid, urlErrorCount, tencentSliderCount, tencentCooldownUntil } = account
             const pending = getTencentVerification(cookie)
-            if (!pending && !tencentVerificationSongmid && (urlErrorCount || 0) < 3) return []
+            // 只有仍然有效的滑块信号才进入待处理列表：内存里的官方挑战，或尚未到期的冷却窗口。
+            // 冷却过期后账号已回到普通轮换；后续请求没再要求滑块，就不该继续挂在顶部提示里。
+            const cooling = Boolean(tencentVerificationSongmid) && Number(tencentCooldownUntil) > Date.now()
+            if (!pending && !cooling) return []
             const { note } = formatCookieForDisplay(account)
             return [{
                 id, note: note || '', nickname: userInfo?.nickname || '',
@@ -141,9 +145,8 @@ export const adminRoutes = (app) => {
         if (cookie?.platform !== 'tencent') return c.json({ success: false, error: 'QQ 音乐 Cookie 不存在' }, 404)
         let pending = getTencentVerification(cookie.cookie)
         if (!pending) {
-            if (!cookie.tencentVerificationSongmid && (cookie.urlErrorCount || 0) < 3) return c.json({ success: false, error: '当前账号无需验证' }, 400)
-            const body = await c.req.json().catch(() => ({}))
-            const songmid = cookie.tencentVerificationSongmid || cookie.lastFailedSongmid || String(body.songmid || '').trim()
+            if (!cookie.tencentVerificationSongmid) return c.json({ success: false, error: '当前账号无需验证' }, 400)
+            const songmid = cookie.tencentVerificationSongmid || cookie.lastFailedSongmid
             if (!/^[A-Za-z0-9]{1,64}$/.test(songmid)) return c.json({ success: false, error: '请输入需要播放的 QQ 音乐歌曲 ID' }, 400)
             console.warn('[tencent] verification start', JSON.stringify({ cookieId: id, songmid, quality: 'standard' }))
             try {
@@ -153,10 +156,16 @@ export const adminRoutes = (app) => {
                     return c.json({ success: false, error: '播放链接已恢复，无需滑块验证' }, 400)
                 }
                 pending = getTencentVerification(cookie.cookie)
-                if (data?.verificationRequired) await store.recordCookieUrlFailure(id, songmid, true)
-                if (!pending) return c.json({ success: false, error: data?.verificationRequired
-                    ? `QQ 音乐要求验证，但未提供可用的官方验证地址（歌曲 ${songmid}）`
-                    : `歌曲 ${songmid} 的标准音质获取失败，QQ 音乐未提供滑块验证地址，请检查歌曲权限或刷新 Cookie` }, 400)
+                if (!pending && data?.verificationRequired) {
+                    await store.recordCookieUrlFailure(id, songmid, true)
+                    return c.json({ success: false, error: `QQ 音乐要求验证，但未提供可用的官方验证地址（歌曲 ${songmid}）` }, 400)
+                }
+                if (!pending) {
+                    // 探测确认 QQ 当前没有滑块要求：清掉残留标记，顶部列表随即移除该账号，
+                    // 不再让它长期占位并反复弹出误导性的「未返回滑块验证」提示。
+                    await store.clearTencentSliderState(id)
+                    return c.json({ success: false, error: `该账号当前未要求滑块验证，已从待处理列表移除（歌曲 ${songmid} 获取失败，可能是歌曲权限问题）` }, 400)
+                }
             } catch {
                 return c.json({ success: false, error: 'QQ 音乐验证请求失败，请稍后重试' }, 502)
             }
@@ -333,9 +342,9 @@ export const adminRoutes = (app) => {
     })
 
     // 汽水二次验证的静态资源（React、腾讯安全 SDK 等）。
-    // 这些文件不含任何密钥，且 sandbox 内嵌的 iframe 加载子资源时既不带 key 也不带
-    // Referer（sec-fetch-site: cross-site），无法参与凭证鉴权，因此保持公开可读，
-    // 仅靠白名单限制文件名。真正的安全边界是下面带 key 校验的 bridge 路由。
+    // 这些文件不含任何密钥。iframe 现在与后台同源，但子资源由 iframe 直接发起，
+    // 不会携带管理端的 X-Auth-Token，因此保持公开可读、仅靠白名单限制文件名；
+    // 真正的安全边界是下面带 key 校验的 bridge 路由。
     app.get('/admin/qr/qishui/security/:asset', async (c) => {
         try {
             const asset = getQishuiSecondVerifyAsset(c.req.param('asset'))

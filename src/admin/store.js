@@ -704,6 +704,12 @@ class DataStore {
         cookie.urlErrorCount = (cookie.urlErrorCount || 0) + 1
         if (cookie.platform === 'tencent') {
             if (songmid) cookie.lastFailedSongmid = songmid
+            // 冷却窗口结束后仍然只是普通的取流失败，说明后续请求已不再要求滑块验证，
+            // 残留的待处理标记必须清掉，否则管理端顶部会一直挂着一个打不开的账号。
+            if (!verificationRequired && cookie.tencentVerificationSongmid && Number(cookie.tencentCooldownUntil) <= Date.now()) {
+                cookie.tencentVerificationSongmid = ''
+                cookie.tencentCooldownUntil = 0
+            }
             if (verificationRequired) {
                 cookie.tencentSliderCount = (Number(cookie.tencentSliderCount) || 0) + 1
                 cookie.tencentVerificationSongmid = songmid
@@ -718,6 +724,22 @@ class DataStore {
         if (!cookie || cookie.platform !== 'tencent' || (!cookie.urlErrorCount && !cookie.lastFailedSongmid && !cookie.tencentVerificationSongmid && !cookie.tencentCooldownUntil)) return
         cookie.urlErrorCount = 0
         cookie.lastFailedSongmid = ''
+        cookie.tencentVerificationSongmid = ''
+        cookie.tencentCooldownUntil = 0
+        await this.saveToFile()
+    }
+
+    /**
+     * 清除 QQ 音乐滑块的待处理状态。
+     *
+     * 滑块标记只有两个有效来源：内存里的官方挑战（5 分钟）和持久化的冷却窗口（1 小时）。
+     * 两者都失效、或探测确认 QQ 已不再要求验证时，标记就是残留；保留它会让管理端顶部
+     * 一直显示一个点开却「没有滑块」的账号。
+     */
+    async clearTencentSliderState(id) {
+        const cookie = this.cookies.get(id)
+        if (!cookie || cookie.platform !== 'tencent') return
+        if (!cookie.tencentVerificationSongmid && !cookie.tencentCooldownUntil) return
         cookie.tencentVerificationSongmid = ''
         cookie.tencentCooldownUntil = 0
         await this.saveToFile()
