@@ -225,11 +225,15 @@
         return { raw: info, encrypted: xor5Hex(JSON.stringify(info)) };
       };
 
-      const verifyKey = new URL(location.href).searchParams.get('key') || new URL(location.href).searchParams.get('token') || '';
-      const bridgeRoot = new URL(location.href).searchParams.get('bridgeRoot') || '/admin/qr/qishui/verify';
-      const verifyBridgeUrl = verifyKey
-        ? `${location.origin}${bridgeRoot}/request`
-        : '';
+      const documentUrl = new URL(location.href);
+      const verifyKey = documentUrl.searchParams.get('key') || documentUrl.searchParams.get('token') || '';
+      const bridgeRoot = documentUrl.searchParams.get('bridgeRoot') || '/admin/qr/qishui/verify';
+      // 桥接地址一律从文档 URL 解析，绝不能拼 location.origin：
+      // 一旦本页被放进 sandbox 且缺少 allow-same-origin，location.origin 会变成字符串 "null"，
+      // 拼出来的 "null/admin/…" 会被当成相对路径，二次验证直接 404。
+      const bridgeBase = new URL(bridgeRoot, documentUrl).href.replace(/\/+$/, '');
+      const bridgeUrl = suffix => `${bridgeBase}/${suffix}`;
+      const verifyBridgeUrl = verifyKey ? bridgeUrl('request') : '';
 
       window.__qishuiRequest = function (request) {
         if (verifyKey && verifyBridgeUrl) {
@@ -400,7 +404,7 @@
       };
 
       if (verifyKey) {
-        fetch(`${location.origin}${bridgeRoot}/start`, {
+        fetch(bridgeUrl('start'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: verifyKey }),
@@ -414,7 +418,7 @@
               throw new Error(verifyResult && verifyResult.message || '二次验证未完成');
             }
             setMfaStatus('验证已完成，正在提交登录结果…');
-            return fetch(`${location.origin}${bridgeRoot}/complete`, {
+            return fetch(bridgeUrl('complete'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ key: verifyKey }),
@@ -422,7 +426,7 @@
           }).then(response => response.json()).then(result => {
             if (!result || result.success !== true) throw new Error(result && result.error || '二次验证完成失败');
             try {
-              window.parent.postMessage({ type: 'qishui-second-verify-complete', key: verifyKey }, location.origin);
+              window.parent.postMessage({ type: 'qishui-second-verify-complete', key: verifyKey }, documentUrl.origin);
             } catch (_) {}
             setMfaStatus('二次验证完成，可以返回扫码页面继续检查。');
           });

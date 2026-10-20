@@ -23,3 +23,12 @@ it('renders a Tencent verification prompt in Cookie management', () => {
     expect(html).toContain('id="tencentVerifyModalAccount"')
     expect(html).not.toContain('id="tencentVerifyLink"')
 })
+
+it('keeps the Qishui verification iframe same-origin for the official SDK', () => {
+    // opaque origin 会让 bdms.js 的 localStorage / document.cookie 访问抛 SecurityError，
+    // 也会让桥接请求拼出 "null/admin/…" 的相对地址，二次验证无法开始或提交。
+    const html = adminPageHandler({ html: value => value })
+    expect(html).toContain('id="qrVerifyIframe"')
+    expect(html).toContain('sandbox="allow-scripts allow-same-origin"')
+    expect(html).not.toContain('sandbox="allow-scripts"></iframe>')
+})

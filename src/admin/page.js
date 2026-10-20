@@ -1411,7 +1411,9 @@ const getAdminHtml = () => `<!DOCTYPE html>
                         <span>汽水安全验证</span>
                         <button type="button" class="qr-link-btn" onclick="closeQrVerifyFrame()">关闭验证窗口</button>
                     </div>
-                    <iframe id="qrVerifyIframe" title="汽水安全验证" sandbox="allow-scripts"></iframe>
+                    <!-- 汽水官方验证组件需要真实同源环境：opaque origin 下 bdms.js 读写 localStorage / document.cookie 会抛
+                         SecurityError，回调地址也会被拼成 "null/admin/…" 相对路径，二次验证因此永远无法开始。 -->
+                    <iframe id="qrVerifyIframe" title="汽水安全验证" sandbox="allow-scripts allow-same-origin"></iframe>
                 </div>
             </div>
             <div class="modal-footer">
@@ -2345,9 +2347,8 @@ const getAdminHtml = () => `<!DOCTYPE html>
         };
 
         const handleQrVerifyMessage = (event) => {
-            // sandbox="allow-scripts" 的 iframe 是 opaque origin，
-            // event.origin 会是字符串 "null"，不能与 location.origin 比较；
-            // 因此以 event.source 严格对应到验证 iframe 为准。
+            // 验证页与后台同源（sandbox 必须带 allow-same-origin，见二维码弹窗里的 iframe），
+            // 因此只认 event.source 指向当前验证 iframe 的消息即可。
             if (event.data?.type !== 'qishui-second-verify-complete') return;
             if (event.source !== qrEl('qrVerifyIframe').contentWindow) return;
             qrVerifySubmitted = true;
