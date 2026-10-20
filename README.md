@@ -110,6 +110,9 @@ GET /api?server={平台}&type={类型}&id={资源}&quality={音质}
 | `id` | — | 歌曲 / 歌单 ID，或搜索关键词 / 漫游模式 |
 | `quality` | `standard` | 播放地址接口（`type=url`）的音质参数 |
 | `redirect` | — | 设置为 `1` 时，`url` / `pic` 通过 302 重定向返回 |
+| `limit` | 搜索 `30` / 电台分页 `100` | 网易云 `search` / `dj` 每页数量，整数 `1-100` |
+| `page` | `1` | 网易云 `search` / `dj` 页码，从 `1` 开始 |
+| `offset` | `0` | 网易云 `search` / `dj` 起始偏移，从 `0` 开始；显式传入时优先于 `page` |
 
 ### 能力矩阵
 
@@ -174,6 +177,22 @@ GET /api?server=kugou&type=search&id=情歌
 GET /api?server=kugou&type=search_playlist&id=流行
 GET /api?server=kugou&type=playlist&id=gcid_3zfpq2kyzmz04f
 ```
+
+### 网易云电台与歌曲搜索分页
+
+电台 `type=dj` 不传分页参数时会逐页读取全部节目，不再只返回前 100 首；显式传入 `limit`、`page` 或 `offset` 时只返回指定页。
+
+歌曲搜索 `type=search`（包括以歌手名为关键词）默认仍返回第一页 30 首，兼容旧客户端；使用 `page` 或 `offset` 可继续读取后续结果，也可将 `limit` 提高至 100。
+
+```http
+GET /api?server=netease&type=dj&id=电台ID
+GET /api?server=netease&type=dj&id=电台ID&limit=100&page=2
+GET /api?server=netease&type=search&id=歌手名&limit=100&page=1
+GET /api?server=netease&type=search&id=歌手名&limit=100&page=2
+GET /api?server=netease&type=search&id=歌手名&limit=100&offset=200
+```
+
+响应仍是原有 JSON 数组；搜索结果为空表示已无可用结果。OpenMusic 等客户端需要递增 `page`（或按实际返回条数推进 `offset`）并合并结果，不能只请求第一页。此处分页参数仅适用于网易云 `search` / `dj`，不改变其他平台接口。
 
 ### 私人漫游
 

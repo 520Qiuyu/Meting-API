@@ -44,22 +44,37 @@ export const map_radio_list = (radios = []) => {
 }
 
 /** 电台节目列表 */
-export const get_dj_programs = async (id, cookie = '') => {
-    const data = {
-        radioId: id,
-        limit: 100,
-        offset: 0,
-        asc: false,
+export const get_dj_programs = async (id, cookie = '', options = {}) => {
+    const limit = options.limit ?? 100
+    let offset = options.offset ?? 0
+    const loadAll = options.limit === undefined && options.offset === undefined
+    const programs = []
+    const seen = new Set()
+
+    while (true) {
+        const res = await request(
+            'POST',
+            'https://music.163.com/weapi/dj/program/byradio',
+            { radioId: id, limit, offset, asc: false },
+            { crypto: 'weapi', cookie: cookie || {} },
+        )
+        if (res.code && Number(res.code) !== 200) throw new Error(res.message || '网易云电台节目加载失败')
+        const batch = res.programs || []
+        const previousCount = programs.length
+        for (const program of batch) {
+            const programId = String(program.id || program.mainSong?.id)
+            if (seen.has(programId)) continue
+            seen.add(programId)
+            programs.push(program)
+        }
+        if (!loadAll || !batch.length || programs.length === previousCount || res.more === false) break
+        offset += batch.length
+        const total = Number(res.count) || 0
+        if (total > 0 && offset >= total) break
+        if (res.more !== true && total <= 0 && batch.length < limit) break
     }
 
-    const res = await request(
-        'POST',
-        'https://music.163.com/weapi/dj/program/byradio',
-        data,
-        { crypto: 'weapi', cookie: cookie || {} },
-    )
-
-    return map_program_list(res.programs || [])
+    return map_program_list(programs)
 }
 
 /** 电台详情 */

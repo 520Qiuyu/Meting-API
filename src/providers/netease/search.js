@@ -1,13 +1,13 @@
 import { request } from "./util.js"
 import { map_song_list } from "./util.js"
 
-export const get_search_songs = async (id, cookie = '') => {
+export const get_search_songs = async (id, cookie = '', { limit = 30, offset = 0 } = {}) => {
 
     const data = {
         s: id,
         type: 1,
-        limit: 30,
-        offset: 0,
+        limit,
+        offset,
         total: true,
     }
 
@@ -17,6 +17,7 @@ export const get_search_songs = async (id, cookie = '') => {
         url: '/api/cloudsearch/pc'
     })
 
-    return map_song_list(res.result)
+    if (res.code && Number(res.code) !== 200) throw new Error(res.message || '网易云歌曲搜索失败')
+    return map_song_list({ songs: res.result?.songs || [] })
 
 }

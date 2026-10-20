@@ -34,7 +34,7 @@ const handle = async (type, id, cookie = '', options = {}) => {
             result = await get_artist_songs(id, cookie)
             break
         case 'search':
-            result = await get_search_songs(id, cookie)
+            result = await get_search_songs(id, cookie, options)
             break
         case 'search_playlist':
             result = await get_search_playlists(id, cookie)
@@ -43,7 +43,7 @@ const handle = async (type, id, cookie = '', options = {}) => {
             result = await get_personal_fm(id, cookie)
             break
         case 'dj':
-            result = await get_dj_programs(id, cookie)
+            result = await get_dj_programs(id, cookie, options)
             break
         case 'dj_detail':
             result = await get_dj_detail(id, cookie)
