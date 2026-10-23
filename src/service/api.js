@@ -7,6 +7,7 @@ import { resolveQishuiSignerUrl } from './qishui-signer-config.js'
 import config from '../config.js'
 import { fetchAuxiliaryLoudness, needsStandardLoudnessUrl, shouldFetchAuxiliaryLoudness } from './loudness.js'
 import { resolveLoudnessServiceUrl } from './loudness-config.js'
+import { parseNeteasePagination } from './netease-pagination.js'
 export default async (ctx) => {
 
     const p = new Providers()
@@ -30,21 +31,10 @@ export default async (ctx) => {
         return ctx.json({ status: 400, message: 'quality 参数不合法', param: { server, quality } })
     }
 
-    const pagination = {}
-    if (server === 'netease' && ['search', 'dj'].includes(type)
-        && ['limit', 'offset', 'page'].some(key => query[key] !== undefined)) {
-        const limit = Number(query.limit ?? (type === 'dj' ? 100 : 30))
-        const page = Number(query.page ?? 1)
-        const offset = Number(query.offset ?? ((page - 1) * limit))
-        const validParams = ['limit', 'offset', 'page'].every(key => query[key] === undefined || /^\d+$/.test(query[key]))
-        if (!validParams || !Number.isSafeInteger(limit) || limit < 1 || limit > 100
-            || !Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(offset) || offset < 0
-            || !Number.isSafeInteger(offset + limit)) {
-            ctx.status(400)
-            return ctx.json({ status: 400, message: '分页参数不合法：limit 为 1-100，page 从 1 开始，offset 从 0 开始' })
-        }
-        pagination.limit = limit
-        pagination.offset = offset
+    const pagination = parseNeteasePagination(query, server, type)
+    if (pagination === null) {
+        ctx.status(400)
+        return ctx.json({ status: 400, message: '分页参数不合法：limit 为 1-100，page 从 1 开始，offset 从 0 开始' })
     }
 
     let cookie = explicitCookie

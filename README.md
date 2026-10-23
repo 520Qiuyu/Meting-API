@@ -190,6 +190,8 @@ GET /api?server=netease&type=search&id=歌手名&limit=100&offset=200
 
 响应仍是原有 JSON 数组；搜索结果为空表示已无可用结果。OpenMusic 等客户端需要递增 `page`（或按实际返回条数推进 `offset`）并合并结果，不能只请求第一页。此处分页参数仅适用于网易云 `search` / `dj`，不改变其他平台接口。
 
+OpenMusic 房间私有账号入口 `/admin/openmusic` 同样支持上述分页参数，校验规则与 `/api` 一致；仍须携带 API Token 和房间 Cookie。分页参数会传入网易云 Provider，每次只读取请求的节目页，不会因使用房间账号而退回全量加载。不传分页参数时保留原有行为，兼容旧客户端。
+
 ### 私人漫游
 
 ```http

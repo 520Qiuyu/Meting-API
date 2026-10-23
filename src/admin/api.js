@@ -11,6 +11,7 @@ import { createKugouQrSession, checkKugouQrSession } from '../providers/kugou/qr
 import Providers from '../providers/index.js'
 import { get_url } from '../util.js'
 import { wrapQishuiPlayPayload } from '../providers/qishui/audio.js'
+import { parseNeteasePagination } from '../service/netease-pagination.js'
 
 /**
  * 汽水二次验证 iframe 专用鉴权。
@@ -419,8 +420,12 @@ export const adminRoutes = (app) => {
             return c.json({ success: false, error: '房间私有接口参数无效' }, 400)
         }
         if (!cookie) return c.json({ success: false, error: '房间音源登录凭证为空' }, 400)
+        const pagination = parseNeteasePagination(c.req.query(), server, type)
+        if (pagination === null) {
+            return c.json({ success: false, error: '分页参数不合法：limit 为 1-100，page 从 1 开始，offset 从 0 开始' }, 400)
+        }
         try {
-            let data = await provider.handle(type, id, cookie, { quality: c.req.query('quality') })
+            let data = await provider.handle(type, id, cookie, { quality: c.req.query('quality'), ...pagination })
             if (server === 'qishui' && type === 'url' && data?.url && data?.auth) {
                 data = wrapQishuiPlayPayload(c, data)
             }
