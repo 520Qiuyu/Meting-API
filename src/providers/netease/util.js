@@ -152,7 +152,8 @@ export const request = async (method, url, data = {}, options) => {
     let settings = {
         method,
         headers,
-        body: new URLSearchParams(data).toString()
+        body: new URLSearchParams(data).toString(),
+        ...(options.signal ? { signal: options.signal, redirect: 'error' } : {})
     }
 
 
@@ -167,6 +168,23 @@ export const request = async (method, url, data = {}, options) => {
     let res, count = 0
     do {
         res = await fetch(url, settings)
+        if (options.maxResponseBytes) {
+            if (!res.ok) throw new Error(`lyric upstream ${res.status}`)
+            const reader = res.body.getReader()
+            const chunks = []
+            let size = 0
+            try {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    size += value.length
+                    if (size > options.maxResponseBytes) throw new Error('lyric response too large')
+                    chunks.push(value)
+                }
+            } finally { await reader.cancel().catch(() => {}) }
+            res = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            break
+        }
         if (options.crypto === 'eapi') {
             const _ = await res.arrayBuffer('utf-8')
             const enc = new TextDecoder()

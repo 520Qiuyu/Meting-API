@@ -97,6 +97,8 @@ Docker 网络中可使用：`http://meting-api-audio-loudness:3100/analyze`
 
 ### 基础格式
 
+音乐接口仅供服务端接入，管理后台独立登录，以下示例仅说明参数格式，部署说明见 [服务端接入](docs/OPENMUSIC_AUTH.md)
+
 ```http
 GET /api?server={平台}&type={类型}&id={资源}&quality={音质}
 ```
@@ -221,6 +223,7 @@ GET /api?server=kugou&type=pic&id=72db6da75ffe23a3a6361bdb8f44d5f4
   - `loudness`：标准化响度信息。酷狗会将播放响应的 `volume` 映射为 `gain`、`volume_peak` 映射为 `peak`；平台未提供可用数据时为 `null`。
 - `pic`：返回 302
 - `lrc`：返回纯文本歌词
+- `lrc&format=json`：返回兼容逐行歌词的 YRC/QRC/KRC/TTML 结构，缺失逐字时保留逐行歌词，参见 [Folia 结构化歌词](docs/FOLIA_LYRICS.md)
 
 ### MetingJS
 

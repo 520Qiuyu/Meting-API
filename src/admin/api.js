@@ -1,5 +1,6 @@
 import store from '../admin/store.js'
 import { authMiddleware, adminMiddleware, apiTokenMiddleware } from '../middleware/auth.js'
+import { openmusicMiddleware } from '../middleware/openmusic.js'
 import { validateCookie } from './cookie-validator.js'
 import cookieMonitor from './cookie-monitor.js'
 import { createQishuiQr, checkQishuiQr, completeQishuiSecondVerify, getQishuiSecondVerifyAsset, requestQishuiSecondVerify, hasQishuiQrSession } from '../providers/qishui/qr.js'
@@ -92,8 +93,8 @@ export const adminRoutes = (app) => {
         }
     })
 
-    app.post('/admin/logout', async (c) => {
-        const username = c.req.header('X-Auth-Username')
+    app.post('/admin/logout', authMiddleware, async (c) => {
+        const username = c.get('username')
         if (username) {
             await store.logoutUser(username)
         }
@@ -409,7 +410,7 @@ export const adminRoutes = (app) => {
         }
     })
 
-    app.get('/admin/openmusic', apiTokenMiddleware, async (c) => {
+    app.get('/admin/openmusic', openmusicMiddleware, async (c) => {
         const server = String(c.req.query('server') || '').trim().toLowerCase()
         const type = String(c.req.query('type') || '').trim().toLowerCase()
         const id = String(c.req.query('id') || '').trim()
@@ -434,11 +435,11 @@ export const adminRoutes = (app) => {
             }
             return c.json(data)
         } catch (error) {
-            return c.json({ success: false, error: error?.message || '房间私有音源请求失败' }, 502)
+            return c.json({ success: false, error: '房间私有音源请求失败', code: 'UPSTREAM_REQUEST_FAILED' }, 502)
         }
     })
 
-    app.post('/admin/fm', apiTokenMiddleware, async (c) => {
+    app.post('/admin/fm', openmusicMiddleware, async (c) => {
         const body = await c.req.json()
         const platform = String(body.platform || 'netease').trim().toLowerCase()
         const cookie = String(body.cookie || '').trim()
@@ -463,7 +464,7 @@ export const adminRoutes = (app) => {
             }
             return c.json({ success: false, error: '连续几批漫游歌曲都暂时没有可用候选' }, 403)
         } catch (error) {
-            return c.json({ success: false, error: error?.message || '漫游歌曲获取失败' }, 502)
+            return c.json({ success: false, error: '漫游歌曲获取失败', code: 'UPSTREAM_REQUEST_FAILED' }, 502)
         }
     })
 

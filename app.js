@@ -6,12 +6,11 @@ import adminRoutes from './src/admin/api.js'
 import store from './src/admin/store.js'
 import cookieMonitor from './src/admin/cookie-monitor.js'
 import { Hono } from 'hono'
-import { logger } from 'hono/logger'
 import { cors } from 'hono/cors'
 import config from './src/config.js'
 import { get_runtime, get_url } from './src/util.js'
 import { isQishuiRequestAbort, qishuiAudioResponse } from './src/providers/qishui/audio.js'
-import { apiTokenMiddleware } from './src/middleware/auth.js'
+import { openmusicMiddleware } from './src/middleware/openmusic.js'
 import { createRequire } from 'module'
 
 const require = createRequire(import.meta.url)
@@ -20,7 +19,19 @@ const { version: APP_VERSION } = require('./package.json')
 const app = new Hono()
 
 app.use('*', cors())
-app.use('*', logger())
+app.use('*', async (context, next) => {
+    await next()
+    const path = context.req.path
+    const logPath = ['/', '/api', '/test', '/audio/qishui'].includes(path) ? path : path.startsWith('/admin/') ? '/admin/*' : '[other]'
+    console.info('[HTTP]', context.req.method, logPath, context.res.status)
+})
+
+app.onError((error, c) => {
+    const invalid = error instanceof SyntaxError || error?.status === 400
+    const status = invalid ? 400 : 500
+    console.error('[HTTP]', c.req.method, invalid ? 'INVALID_REQUEST' : 'INTERNAL_ERROR')
+    return c.json({ success: false, error: invalid ? '请求格式无效' : '服务请求失败', code: invalid ? 'INVALID_REQUEST' : 'INTERNAL_ERROR' }, status)
+})
 
 adminRoutes(app)
 
@@ -40,8 +51,8 @@ app.use('*', async (c, next) => {
     await next()
 })
 
-app.get('/api', apiTokenMiddleware, api)
-app.get('/audio/qishui', async (c) => {
+app.get('/api', openmusicMiddleware, api)
+app.get('/audio/qishui', openmusicMiddleware, async (c) => {
     try {
         return await qishuiAudioResponse(c)
     } catch (error) {
@@ -49,11 +60,11 @@ app.get('/audio/qishui', async (c) => {
             // 浏览器切歌或重新请求 Range 时会主动关闭旧连接，不应伪装成播放失败。
             return new Response(null, { status: 499 })
         }
-        console.error('[QishuiAudio]', error?.message || error)
-        return c.json({ error: error?.message || 'qishui audio failed' }, 502)
+        console.error('[QishuiAudio]', 'UPSTREAM_AUDIO_FAILED')
+        return c.json({ error: '汽水音频请求失败', code: 'UPSTREAM_AUDIO_FAILED' }, 502)
     }
 })
-app.get('/test', apiTokenMiddleware, handler)
+app.get('/test', openmusicMiddleware, handler)
 app.get('/', (c) => {
     return c.html(renderHomepage({
         baseUrl: get_url(c),

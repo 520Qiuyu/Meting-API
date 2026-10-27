@@ -3,6 +3,16 @@ import { Buffer } from 'buffer/index.js'
 import { get_public_base } from '../../util.js'
 
 const WEB_UA = 'LunaPC/3.3.0(359450208)'
+const MAX_SOURCE_BYTES = 128 * 1024 * 1024
+
+const validateQishuiAudioUrl = (url) => {
+    const target = new URL(url)
+    if (typeof url !== 'string' || url.length > 8192 || target.protocol !== 'https:'
+        || target.username || target.password || target.port || target.hash
+        || !target.hostname.endsWith('.douyinvod.com')) {
+        throw new Error('汽水音频地址不受支持')
+    }
+}
 
 const emptyBox = () => ({ size: 0, offset: 0, data: Buffer.alloc(0) })
 
@@ -388,6 +398,7 @@ const prunePlayTokens = () => {
 }
 
 export const createQishuiPlayToken = (url, auth, mimeType) => {
+    validateQishuiAudioUrl(url)
     const token = crypto.randomBytes(16).toString('hex')
     playTokens.set(token, {
         url,
@@ -421,6 +432,7 @@ const fetchQishuiSource = async (url, signal) => {
     try {
         return await fetch(url, {
             signal,
+            redirect: 'error',
             headers: { 'User-Agent': WEB_UA, Referer: 'https://www.qishui.com/' },
         })
     } catch (error) {
@@ -428,6 +440,7 @@ const fetchQishuiSource = async (url, signal) => {
         if (!/terminated|socket|reset|network/i.test(String(error?.message || ''))) throw error
         return fetch(url, {
             signal,
+            redirect: 'error',
             headers: { 'User-Agent': WEB_UA, Referer: 'https://www.qishui.com/' },
         })
     }
@@ -436,7 +449,7 @@ const fetchQishuiSource = async (url, signal) => {
 export const preloadQishuiAudio = (url, auth) => {
     void loadQishuiAudio(url, auth).catch(error => {
         if (!isQishuiRequestAbort(error)) {
-            console.warn('[QishuiAudio] 预热失败:', error?.message || error)
+            console.warn('[QishuiAudio] 预热失败')
         }
     })
 }
@@ -447,6 +460,7 @@ const ensureQishuiLoudness = async (value) => {
 }
 
 export const loadQishuiAudio = async (url, auth) => {
+    validateQishuiAudioUrl(url)
     const key = cacheKey(url, auth)
     const cached = cache.get(key)
     if (cached) {
@@ -470,9 +484,23 @@ export const loadQishuiAudio = async (url, auth) => {
 
     // 与客户端 Range/切歌断开解耦：后台拉完并缓存，避免低带宽服务器重复从 CDN 下载。
     const task = (async () => {
-        const response = await fetchQishuiSource(url)
+        const response = await fetchQishuiSource(url, AbortSignal.timeout(60_000))
         if (!response.ok) throw new Error(`汽水音频下载失败: ${response.status}`)
-        const raw = Buffer.from(await response.arrayBuffer())
+        const reader = response.body.getReader()
+        const chunks = []
+        let size = 0
+        try {
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                size += value.byteLength
+                if (size > MAX_SOURCE_BYTES) throw new Error('汽水音频超过大小限制')
+                chunks.push(value)
+            }
+        } finally {
+            await reader.cancel().catch(() => {})
+        }
+        const raw = Buffer.concat(chunks, size)
         const result = auth ? decryptQishuiAudio(raw, auth) : {
             buffer: raw,
             contentType: response.headers.get('content-type') || 'audio/mp4',
@@ -490,7 +518,7 @@ export const loadQishuiAudio = async (url, auth) => {
     }
 }
 
-/** 浏览器可直链播放的汽水解密地址（公开；每次下发 30 分钟有效的 t） */
+/** 汽水解密地址，播放 token 有效期 30 分钟，仍需 OpenMusic 服务端签名 */
 export const buildQishuiAudioUrl = (ctx, { url, auth, mimeType }) => {
     const token = createQishuiPlayToken(url, auth, mimeType)
     const endpoint = new URL(`${get_public_base(ctx)}/audio/qishui`)
@@ -534,7 +562,7 @@ export const qishuiAudioResponse = async (ctx) => {
 
     const url = entry.url
     const auth = entry.auth
-    if (!/^https?:\/\//i.test(url)) return ctx.json({ error: 'invalid qishui audio url' }, 400)
+    validateQishuiAudioUrl(url)
 
     const mode = String(ctx.req.query('mode') || '').trim().toLowerCase()
 

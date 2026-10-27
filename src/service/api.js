@@ -8,6 +8,7 @@ import config from '../config.js'
 import { fetchAuxiliaryLoudness, needsStandardLoudnessUrl, shouldFetchAuxiliaryLoudness } from './loudness.js'
 import { resolveLoudnessServiceUrl } from './loudness-config.js'
 import { parseNeteasePagination } from './netease-pagination.js'
+import { getStructuredLyrics } from './structured-lyrics.js'
 export default async (ctx) => {
 
     const p = new Providers()
@@ -20,6 +21,10 @@ export default async (ctx) => {
     const wantRedirect = query.redirect === '1' || query.redirect === 'true'
     const explicitCookie = String(ctx.req.header('X-OpenMusic-Cookie') || '').trim()
     const fmUrl = type === 'url' && query.fm === '1' && !explicitCookie
+
+    if (type === 'lrc' && query.format === 'json' && !/^[a-z0-9_-]{1,256}$/i.test(id)) {
+        return ctx.json({ error: 'invalid lyric id', code: 'INVALID_LYRIC_ID' }, 400)
+    }
 
     if (!p.get_provider_list().includes(server) || !p.get(server).support_type.includes(type)) {
         ctx.status(400)
@@ -70,6 +75,10 @@ export default async (ctx) => {
     try {
         data = await p.get(server).handle(type, id, cookie, { quality, signerUrl, ...pagination })
     } catch (error) {
+        if (type === 'lrc' && query.format === 'json' && ['netease', 'tencent', 'kugou'].includes(server)) {
+            console.warn(`[Lyrics] ${server} ordinary lyric unavailable, trying word timing`)
+            return ctx.json(await getStructuredLyrics(server, id, cookie, {}))
+        }
         if ((!requiresSvip && !fmUrl && !(server === 'tencent' && type === 'url')) || !storedCookie) throw error
     }
 
@@ -196,6 +205,7 @@ export default async (ctx) => {
     }
 
     if (type === 'lrc') {
+        if (query.format === 'json') return ctx.json(await getStructuredLyrics(server, id, cookie, data))
         return ctx.text(lyricFormat(data.lyric, data.tlyric || ''))
     }
 
